@@ -2,17 +2,32 @@ import csv, os
 from collections import defaultdict
 
 class ProcessLogs:
+    """
+    Assuming flow log format is strictly of version 2 in the below order
+    ["version", "account-id", "interface-id", "srcaddr", "dstaddr", "srcport", 
+     "dstport", "protocol", "packets", "bytes", "start", "end", "action", "log-status"]
+    """
 
     def read_lookup_table(self, file_path):
-        lookup = {}
+        """
+        read_lookup_table function reads lookup_table.csv file and creates a dictionary for tag lookup
+        tag_lookup -> {(dstport, protocol): tag}
+        eg. tag_lookup = {(25,"tcp"): "sv_p1", (31,"udp"): "sv_p3"}
+        """
+        tag_lookup = {}
         with open(file_path, 'r') as f:
             reader = csv.DictReader(f)
             for row in reader:
-                key = (int(row['dstport']), row['protocol'].strip().lower())
-                lookup[key] = row['tag'].strip().lower()
-        return lookup
+                key = (int(row['dstport'].strip()), row['protocol'].strip().lower())
+                tag_lookup[key] = row['tag'].strip().lower()
+        return tag_lookup
     
     def read_protocol_numbers(self, file_path):
+        """
+        read_protocol_numbers function reads protocol_numbers.csv file and creates a dictionary for protocols
+        protocols -> {port: protocol}
+        eg. protocols = {6: "tcp", 17: "udp"}
+        """
         protocols = {}
         with open(file_path, 'r') as f:
             reader = csv.DictReader(f)
@@ -23,7 +38,14 @@ class ProcessLogs:
 
 
     def process_flow_logs(self, flow_log_path, lookup_table_path, protocol_numbers_path, tag_output_path, combination_output_path):
-        lookup = self.read_lookup_table(lookup_table_path)
+        """
+        process_flow_logs function calls read_lookup_table and read_protocol_numbers to get the tag_lookup and protocols_map
+        dictionaries respectively. 
+        process_flow_logs function then reads and process the log file line by line to create 
+        tag counts and combination counts using the fetched dictionaries. 
+        Funciton saves tag counts and combination counts in two separate csv files as output.
+        """
+        tag_lookup = self.read_lookup_table(lookup_table_path)
         protocols_map = self.read_protocol_numbers(protocol_numbers_path)
         tag_counts = defaultdict(int)
         combination_counts = defaultdict(int)
@@ -36,10 +58,12 @@ class ProcessLogs:
                     continue
 
                 dst_port = int(fields[6])
-                protocol = protocols_map.get(fields[7], "Unknown")
+                protocol = protocols_map.get(fields[7], "unknown")
                 key = (dst_port, protocol)
+                tag = tag_lookup.get(key, 'untagged')
 
-                tag = lookup.get(key, 'Untagged')
+                # tags can map to more than one port, protocol combinations
+                # keeping tag count and combination count separate 
                 tag_counts[tag] += 1
                 combination_counts[f"{dst_port},{protocol}"] += 1
 
@@ -61,6 +85,7 @@ class ProcessLogs:
         print("Port/Protocol Combination count written to file", combination_output_path)
 
 # Run code
+# update dir_path in case of running locally to current directory path
 dir_path = '/workspaces/Process-Flow-Logs/'
 flow_log_path = dir_path + 'logs.txt'
 lookup_table_path = dir_path + 'lookup_table.csv'
